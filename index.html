@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>柏林每小時氣溫預報 - Open-Meteo Weather App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.5);
+      border-radius: 10px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(107, 114, 128, 0.8);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between p-4 sm:p-6 md:p-8">
+
+  <div class="max-w-5xl mx-auto w-full flex-grow">
+    <!-- Header -->
+    <header class="mb-8 text-center sm:text-left flex flex-col sm:flex-row justify-between items-center border-b border-slate-800 pb-6 gap-4">
+      <div>
+        <div class="inline-flex items-center gap-2 text-sky-400 font-semibold text-xs tracking-wider uppercase bg-sky-950/60 border border-sky-800/50 px-3 py-1 rounded-full mb-2">
+          <i class="fa-solid me-1 fa-location-dot"></i> 德國 ‧ 柏林 (Berlin)
+        </div>
+        <h1 class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">每小時氣溫趨勢預報</h1>
+      </div>
+      <div class="text-right sm:text-right">
+        <div class="text-xs text-slate-400">資料來源 (Data Source)</div>
+        <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-sm text-sky-400 hover:text-sky-300 font-medium transition-colors mt-0.5">
+          <span>Open-Meteo API</span>
+          <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+        </a>
+      </div>
+    </header>
+
+    <!-- Status / Notification Banner -->
+    <div id="status-banner" class="hidden mb-6 p-4 rounded-xl text-sm border shadow-lg transition-all flex items-start gap-3">
+      <i id="status-icon" class="fa-solid fa-circle-info text-lg mt-0.5"></i>
+      <div id="status-msg" class="flex-grow"></div>
+    </div>
+
+    <!-- Loading Skeleton / Spinner -->
+    <div id="loading-state" class="py-20 flex flex-col items-center justify-center text-center">
+      <div class="relative w-16 h-16 mb-4">
+        <div class="absolute inset-0 rounded-full border-4 border-sky-500/20"></div>
+        <div class="absolute inset-0 rounded-full border-4 border-sky-400 border-t-transparent animate-spin"></div>
+      </div>
+      <p class="text-slate-300 font-medium">正在取得最新氣象數據...</p>
+      <p class="text-xs text-slate-500 mt-1">來自 Open-Meteo 開放資料庫</p>
+    </div>
+
+    <!-- Error State (When API fails & No Cache) -->
+    <div id="error-state" class="hidden py-16 text-center bg-slate-800/50 border border-rose-500/20 rounded-2xl p-8">
+      <div class="w-16 h-16 bg-rose-500/10 text-rose-400 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h2 class="text-xl font-bold text-white mb-2">無法取得氣象數據</h2>
+      <p id="error-desc" class="text-slate-400 max-w-md mx-auto text-sm mb-6">請求超時或伺服器暫時沒有回應，請檢查網路連線後再試一次。</p>
+      <button onclick="fetchWeatherData()" class="inline-flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold px-6 py-2.5 rounded-xl shadow-lg transition-all active:scale-95">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span>重新嘗試載入</span>
+      </button>
+    </div>
+
+    <!-- Weather Main Content Area -->
+    <main id="weather-content" class="hidden space-y-6">
+      
+      <!-- Summary Metrics Bar -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+          <div class="text-xs text-slate-400 font-medium mb-1">當前氣溫</div>
+          <div id="metric-current" class="text-2xl sm:text-3xl font-extrabold text-white">-- °C</div>
+        </div>
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+          <div class="text-xs text-slate-400 font-medium mb-1">本日最高溫</div>
+          <div id="metric-high" class="text-2xl sm:text-3xl font-extrabold text-amber-400">-- °C</div>
+        </div>
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+          <div class="text-xs text-slate-400 font-medium mb-1">本日最低溫</div>
+          <div id="metric-low" class="text-2xl sm:text-3xl font-extrabold text-emerald-400">-- °C</div>
+        </div>
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+          <div class="text-xs text-slate-400 font-medium mb-1">本日平均溫</div>
+          <div id="metric-avg" class="text-2xl sm:text-3xl font-extrabold text-sky-400">-- °C</div>
+        </div>
+      </div>
+
+      <!-- Date Tabs Selector -->
+      <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <h2 class="text-base font-semibold text-slate-200">選擇日期 (7 天預報)</h2>
+        <span class="text-xs text-slate-400">點擊按鈕切換不同日期的數據</span>
+      </div>
+      <div id="date-tabs" class="flex gap-2 overflow-x-auto custom-scrollbar pb-2">
+        <!-- Dynamic Date Buttons -->
+      </div>
+
+      <!-- Hourly Cards Grid -->
+      <div id="hourly-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+        <!-- Dynamic Hourly Cards -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-12 text-center text-xs text-slate-500 border-t border-slate-800/60 pt-6">
+    <p>© 2026 柏林氣象預報網頁示例 ‧ 開放資料 API 串接與前端快取設計</p>
+  </footer>
+
+  <script>
+    const API_URL = 'https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m';
+    const CACHE_KEY = 'open_meteo_berlin_cache';
+    const TIMEOUT_MS = 8000;
+
+    // DOM Elements
+    const loadingEl = document.getElementById('loading-state');
+    const errorEl = document.getElementById('error-state');
+    const contentEl = document.getElementById('weather-content');
+    const errorDescEl = document.getElementById('error-desc');
+    const statusBanner = document.getElementById('status-banner');
+    const statusIcon = document.getElementById('status-icon');
+    const statusMsg = document.getElementById('status-msg');
+    const dateTabsEl = document.getElementById('date-tabs');
+    const hourlyGridEl = document.getElementById('hourly-grid');
+
+    // Metrics DOM
+    const metricCurrent = document.getElementById('metric-current');
+    const metricHigh = document.getElementById('metric-high');
+    const metricLow = document.getElementById('metric-low');
+    const metricAvg = document.getElementById('metric-avg');
+
+    let groupedForecastData = {};
+    let activeDateKey = null;
+
+    async function fetchWithTimeout(url, options = {}) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timer);
+        return response;
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
+      }
+    }
+
+    function sanitizeAndGroupData(apiResponse) {
+      if (!apiResponse || !apiResponse.hourly || !Array.isArray(apiResponse.hourly.time) || !Array.isArray(apiResponse.hourly.temperature_2m)) {
+        throw new Error('API 回傳資料格式不完整或缺乏必要欄位');
+      }
+
+      const times = apiResponse.hourly.time;
+      const temps = apiResponse.hourly.temperature_2m;
+      const count = Math.min(times.length, temps.length);
+      const grouped = {};
+
+      for (let i = 0; i < count; i++) {
+        const rawTime = times[i];
+        const temp = temps[i];
+
+        // 排除無效值
+        if (!rawTime || temp === null || temp === undefined || isNaN(temp)) continue;
+
+        const parts = rawTime.split('T');
+        if (parts.length < 2) continue;
+
+        const dateStr = parts[0];
+        const hourStr = parts[1];
+
+        if (!grouped[dateStr]) {
+          grouped[dateStr] = [];
+        }
+
+        grouped[dateStr].push({
+          hour: hourStr,
+          temp: Math.round(temp * 10) / 10,
+          rawISO: rawTime
+        });
+      }
+
+      if (Object.keys(grouped).length === 0) {
+        throw new Error('清理後無可用氣溫數據');
+      }
+
+      return grouped;
+    }
+
+    async function fetchWeatherData() {
+      showState('loading');
+      hideBanner();
+
+      try {
+        const res = await fetchWithTimeout(API_URL);
+        
+        if (!res.ok) {
+          throw new Error(`HTTP 伺服器回應錯誤 (${res.status})`);
+        }
+
+        const rawData = await res.json();
+        groupedForecastData = sanitizeAndGroupData(rawData);
+
+        // 寫入本地快取
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          updatedAt: Date.now(),
+          data: rawData
+        }));
+
+        renderUI(groupedForecastData);
+        showState('content');
+
+      } catch (err) {
+        console.warn('API 取得失敗，嘗試讀取快取:', err);
+        handleFetchFailure(err);
+      }
+    }
+
+    function handleFetchFailure(error) {
+      const cachedString = localStorage.getItem(CACHE_KEY);
+
+      if (cachedString) {
+        try {
+          const cachedObj = JSON.parse(cachedString);
+          groupedForecastData = sanitizeAndGroupData(cachedObj.data);
+
+          const minutesAgo = Math.max(1, Math.round((Date.now() - cachedObj.updatedAt) / 60000));
+          
+          showBanner(
+            `<strong>無法讀取最新網路資料 (${error.name === 'AbortError' ? '連線逾時' : error.message})</strong><br><span class="text-xs opacity-90">目前顯示為 ${minutesAgo} 分鐘前儲存的本地備援快取資料。</span>`,
+            'warning'
+          );
+
+          renderUI(groupedForecastData);
+          showState('content');
+          return;
+        } catch (e) {
+          console.error('快取解析異常:', e);
+        }
+      }
+
+      // 無快取時，顯示錯誤畫面
+      const errMsg = error.name === 'AbortError' 
+        ? '網路請求超時（超過 8 秒）。請檢查您的網路連線。' 
+        : (error.message || '無法連線至 Open-Meteo 服務。');
+      
+      errorDescEl.innerText = errMsg;
+      showState('error');
+    }
+
+    function renderUI(data) {
+      const dateKeys = Object.keys(data);
+      if (dateKeys.length === 0) return;
+
+      if (!activeDateKey || !data[activeDateKey]) {
+        activeDateKey = dateKeys[0];
+      }
+
+      // 渲染日期選單 Tabs
+      dateTabsEl.innerHTML = '';
+      dateKeys.forEach(dateStr => {
+        const isSelected = dateStr === activeDateKey;
+        const btn = document.createElement('button');
+        
+        // 格式化顯示 (如 10/01)
+        const dateObj = new Date(dateStr);
+        const displayLabel = !isNaN(dateObj) 
+          ? `${dateObj.getMonth() + 1}/${dateObj.getDate()} (${getWeekdayName(dateObj.getDay())})`
+          : dateStr;
+
+        btn.className = `px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm whitespace-nowrap transition-all flex items-center gap-2 border ${
+          isSelected 
+            ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-lg shadow-sky-500/20' 
+            : 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:bg-slate-700/80'
+        }`;
+        
+        btn.innerHTML = `<i class="fa-regular fa-calendar-days text-xs ${isSelected ? 'text-slate-950' : 'text-sky-400'}"></i> ${displayLabel}`;
+        
+        btn.onclick = () => {
+          activeDateKey = dateStr;
+          renderUI(data);
+        };
+
+        dateTabsEl.appendChild(btn);
+      });
+
+      // 渲染當日每小時卡片與數據指標
+      renderDayDetails(data[activeDateKey]);
+    }
+
+    function renderDayDetails(hourlyList) {
+      if (!hourlyList || hourlyList.length === 0) return;
+
+      // 計算統計數值
+      const temps = hourlyList.map(item => item.temp);
+      const maxTemp = Math.max(...temps);
+      const minTemp = Math.min(...temps);
+      const avgTemp = Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10;
+      
+      metricCurrent.innerText = `${hourlyList[0].temp} °C`;
+      metricHigh.innerText = `${maxTemp} °C`;
+      metricLow.innerText = `${minTemp} °C`;
+      metricAvg.innerText = `${avgTemp} °C`;
+
+      // 渲染網格卡片
+      hourlyGridEl.innerHTML = hourlyList.map(item => {
+        const isCold = item.temp <= 10;
+        const isWarm = item.temp >= 20;
+        const iconClass = isCold ? 'fa-snowflake text-sky-300' : (isWarm ? 'fa-sun text-amber-400' : 'fa-cloud-sun text-sky-400');
+
+        return `
+          <div class="bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 rounded-xl p-3 text-center transition-all hover:scale-105 hover:border-slate-600">
+            <div class="text-xs font-semibold text-slate-400 mb-2">${item.hour}</div>
+            <div class="text-lg my-1">
+              <i class="fa-solid ${iconClass}"></i>
+            </div>
+            <div class="text-base font-bold text-white mt-1">${item.temp}°</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function getWeekdayName(dayNum) {
+      const names = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+      return names[dayNum] || '';
+    }
+
+    function showState(state) {
+      loadingEl.classList.toggle('hidden', state !== 'loading');
+      errorEl.classList.toggle('hidden', state !== 'error');
+      contentEl.classList.toggle('hidden', state !== 'content');
+    }
+
+    function showBanner(msg, type = 'warning') {
+      statusBanner.classList.remove('hidden', 'bg-amber-500/10', 'border-amber-500/30', 'text-amber-300', 'bg-rose-500/10', 'border-rose-500/30', 'text-rose-300');
+      
+      if (type === 'warning') {
+        statusBanner.classList.add('bg-amber-500/10', 'border-amber-500/30', 'text-amber-300');
+        statusIcon.className = 'fa-solid fa-triangle-exclamation text-amber-400 text-base mt-0.5';
+      } else {
+        statusBanner.classList.add('bg-rose-500/10', 'border-rose-500/30', 'text-rose-300');
+        statusIcon.className = 'fa-solid fa-circle-xmark text-rose-400 text-base mt-0.5';
+      }
+
+      statusMsg.innerHTML = msg;
+    }
+
+    function hideBanner() {
+      statusBanner.classList.add('hidden');
+    }
+
+    // 初始化啟動
+    window.addEventListener('DOMContentLoaded', fetchWeatherData);
+  </script>
+</body>
+</html>
